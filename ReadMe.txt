@@ -60,8 +60,9 @@ In your enabled version of java under "Runtime Parameters" add:
 Fast Copy-Move Forgery Detection by HWEI-JEN LIN, CHUN-WEI WANG and YANG-TA KAO
 
 
-4. Source Code & Licence
+4. Licence
 ------------------------
 
-TODO
+
+The CopyMove Module Package is distributed under the MIT Licence. Please see licence.txt for further information.
 
