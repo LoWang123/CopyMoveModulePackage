@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?><module codename="de.fau.copymoveforgerydetection">
+    <module_version install_time="1791376848824" last="true" origin="installer" specification_version="1.0">
+        <file crc="1430670767" name="config/Modules/de-fau-copymoveforgerydetection.xml"/>
+        <file crc="1977770749" name="modules/de-fau-copymoveforgerydetection.jar"/>
+        <file crc="1252023648" name="modules/ext/copymove.jar"/>
+        <file crc="897425671" name="modules/ext/miglayout-4.0.jar"/>
+    </module_version>
+</module>

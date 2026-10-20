@@ -23,7 +23,6 @@ import org.openide.util.lookup.ServiceProvider;
 import org.sleuthkit.autopsy.corecomponentinterfaces.DataContentViewer;
 import org.openide.nodes.Node;
 import org.sleuthkit.autopsy.coreutils.Logger;
-import org.sleuthkit.autopsy.ingest.IngestServices;
 import org.sleuthkit.datamodel.AbstractFile;
 import org.sleuthkit.datamodel.BlackboardArtifact;
 import org.sleuthkit.datamodel.BlackboardAttribute;
@@ -39,7 +38,7 @@ public class CopyMoveForgeryDetectionDataContentViewer extends javax.swing.JPane
     private String currentFileExtension = "";
     private BufferedImage currentImage = null;
     private final JFileChooser fileChooser = new JFileChooser();
-    private Logger logger = IngestServices.getInstance().getLogger("CopyMoveForgeryDetectionDataContentViewer");
+    private static final Logger logger = Logger.getLogger("CopyMoveForgeryDetectionDataContentViewer");
     
     /**
      * Creates new form CopyMoveForgeryDetectionDataContentViewer
@@ -51,12 +50,18 @@ public class CopyMoveForgeryDetectionDataContentViewer extends javax.swing.JPane
     
     @Override
     public void setNode(Node selectedNode) {
+        // Autopsy calls setNode(null) to clear the viewer when the selection is cleared.
+        if (selectedNode == null) {
+            resetComponent();
+            return;
+        }
         AbstractFile abstractFile = selectedNode.getLookup().lookup(AbstractFile.class);
-        
+        if (abstractFile == null) {
+            resetComponent();
+            return;
+        }
         try {
             initializeResultImage(abstractFile);
-      //      panelImage.addComponentListener(new resizeListener());
-      //      this.addComponentListener(new resizeListener());
         }
         catch (IOException ex) {
             logger.log(Level.SEVERE, "Error when trying to read Image from Blackboard (setNode)", ex);
@@ -67,63 +72,73 @@ public class CopyMoveForgeryDetectionDataContentViewer extends javax.swing.JPane
         catch (Exception ex) {
             logger.log(Level.SEVERE, "Unknown exception (setNode)", ex);
         }
-        
     }
 
-    private void initializeResultImage(AbstractFile abstractFile) throws TskCoreException, IOException{
-        
-        ArrayList<BlackboardArtifact> artifacts = abstractFile.getArtifacts(BlackboardArtifact.ARTIFACT_TYPE.TSK_INTERESTING_FILE_HIT);
-        
+    /** True if the attribute is the custom result-image attribute. */
+    private static boolean isResultImage(BlackboardAttribute attribute) {
+        return CopyMoveIngestModuleFactory.getResultAttributeTypeString()
+                .equals(attribute.getAttributeType().getTypeName());
+    }
+
+    private void initializeResultImage(AbstractFile abstractFile) throws TskCoreException, IOException {
+
         BufferedImage resultImage = null;
-        String resultText = "";
-        
-        
-        for(BlackboardArtifact artifact: artifacts) {
-            for(BlackboardAttribute attribute: artifact.getAttributes(BlackboardAttribute.ATTRIBUTE_TYPE.TSK_VALUE)) {
-                if(attribute.getModuleName().equals(CopyMoveIngestModuleFactory.getModuleName())) {
-                    byte[] imageBytes = attribute.getValueBytes();
-                    ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes);
-                    resultImage = ImageIO.read(bais);
-                }
-            }
-            for(BlackboardAttribute attribute: artifact.getAttributes(BlackboardAttribute.ATTRIBUTE_TYPE.TSK_COMMENT)) {
-                if(attribute.getModuleName().equals(CopyMoveIngestModuleFactory.getModuleName())) {
-                    resultText = attribute.getValueString();
+
+        for (BlackboardArtifact artifact : abstractFile.getArtifacts(BlackboardArtifact.ARTIFACT_TYPE.TSK_INTERESTING_FILE_HIT)) {
+            for (BlackboardAttribute attribute : artifact.getAttributes()) {
+                if (isResultImage(attribute)) {
+                    resultImage = ImageIO.read(new ByteArrayInputStream(attribute.getValueBytes()));
                 }
             }
         }
-        
-        currentName = abstractFile.getName().replace("." + abstractFile.getNameExtension(), "") + "_CopyMoveResult";       
-        currentFileExtension = abstractFile.getNameExtension();
-        
-        labelResultText.setText(currentName);       
+
+        String ext = abstractFile.getNameExtension();
+        if (ext == null) {
+            ext = "";
+        }
+        currentFileExtension = ext.isEmpty() ? "png" : ext;
+        currentName = abstractFile.getName();
+        if (!ext.isEmpty() && currentName.endsWith("." + ext)) {
+            currentName = currentName.substring(0, currentName.length() - ext.length() - 1);
+        }
+        currentName += "_CopyMoveResult";
+
+        labelResultText.setText(currentName);
         setImage(resultImage);
     }
-    
+
     private void setImage(BufferedImage image) {
-        double differenceWidth = (double)image.getWidth() / (double)panelImage.getWidth();
-        double differenceHeight = (double)image.getHeight() / (double)panelImage.getHeight();
-        
-        Image scaledImage = image;
-        
-        if(differenceWidth > differenceHeight) {
-            if(differenceWidth > 1) {
-                int height = (int)((double)image.getHeight() / differenceWidth);
-                scaledImage = image.getScaledInstance(panelImage.getWidth(), height, Image.SCALE_FAST);
-            }
-        }
-        else {
-            if(differenceHeight > 1) {
-                int width = (int)((double)image.getWidth() / differenceHeight);
-                scaledImage = image.getScaledInstance(width, panelImage.getHeight(), Image.SCALE_FAST);
-            }
-        }
-        
-        labelResultImage.setIcon(new ImageIcon(scaledImage));
         currentImage = image;
-    } 
-    
-    
+        if (image == null) {
+            labelResultImage.setIcon(null);
+            return;
+        }
+
+        Image scaledImage = image;
+        int panelWidth = panelImage.getWidth();
+        int panelHeight = panelImage.getHeight();
+
+        // Before the panel is laid out its size is 0; don't scale (avoids divide-by-zero).
+        if (panelWidth > 0 && panelHeight > 0) {
+            double differenceWidth = (double) image.getWidth() / (double) panelWidth;
+            double differenceHeight = (double) image.getHeight() / (double) panelHeight;
+
+            if (differenceWidth > differenceHeight) {
+                if (differenceWidth > 1) {
+                    int height = Math.max(1, (int) ((double) image.getHeight() / differenceWidth));
+                    scaledImage = image.getScaledInstance(panelWidth, height, Image.SCALE_FAST);
+                }
+            }
+            else if (differenceHeight > 1) {
+                int width = Math.max(1, (int) ((double) image.getWidth() / differenceHeight));
+                scaledImage = image.getScaledInstance(width, panelHeight, Image.SCALE_FAST);
+            }
+        }
+
+        labelResultImage.setIcon(new ImageIcon(scaledImage));
+    }
+
+
     @Override
     public String getTitle() {
         return "Copy Move Forgery Detection";
@@ -146,49 +161,45 @@ public class CopyMoveForgeryDetectionDataContentViewer extends javax.swing.JPane
 
     @Override
     public void resetComponent() {
+        currentImage = null;
+        labelResultImage.setIcon(null);
+        labelResultText.setText("");
     }
 
     @Override
     public boolean isSupported(Node node) {
+        if (node == null) {
+            return false;
+        }
         AbstractFile abstractFile = node.getLookup().lookup(AbstractFile.class);
         return isSupported(abstractFile);
     }
 
     private boolean isSupported(AbstractFile abstractFile) {
-        
+
         if (abstractFile == null) {
             return false;
         }
         try {
-            boolean cmfdResultFound = false;
-            ArrayList<BlackboardArtifact> artifacts = abstractFile.getArtifacts(BlackboardArtifact.ARTIFACT_TYPE.TSK_INTERESTING_FILE_HIT);
-            
-            for(BlackboardArtifact artifact: artifacts) {
-                for(BlackboardAttribute attribute: artifact.getAttributes(BlackboardAttribute.ATTRIBUTE_TYPE.TSK_VALUE)) {
-                    if(attribute.getModuleName().equals(CopyMoveIngestModuleFactory.getModuleName())) {
-                        cmfdResultFound = true;
+            for (BlackboardArtifact artifact : abstractFile.getArtifacts(BlackboardArtifact.ARTIFACT_TYPE.TSK_INTERESTING_FILE_HIT)) {
+                for (BlackboardAttribute attribute : artifact.getAttributes()) {
+                    if (isResultImage(attribute)) {
+                        return true;
                     }
                 }
-                for(BlackboardAttribute attribute: artifact.getAttributes(BlackboardAttribute.ATTRIBUTE_TYPE.TSK_COMMENT)) {
-                    if(attribute.getModuleName().equals(CopyMoveIngestModuleFactory.getModuleName())) {
-                        cmfdResultFound = true;
-                    }
-                }
-            }
-            
-            if(cmfdResultFound) {
-                return true;
             }
         }
         catch (TskCoreException ex) {
             logger.log(Level.SEVERE, "Error when trying to read BlackboardAttributes (isSupported)", ex);
-            return false;
         }
         return false;
     }
     
     @Override
     public int isPreferred(Node node) {
+        if (node == null) {
+            return 0;
+        }
         AbstractFile abstractFile = node.getLookup().lookup(AbstractFile.class);
         if(isSupported(abstractFile)) {
             return 2;
@@ -303,9 +314,11 @@ public class CopyMoveForgeryDetectionDataContentViewer extends javax.swing.JPane
         
         if(returnVal == JFileChooser.APPROVE_OPTION) {
             File file = fileChooser.getSelectedFile();
-            File outFile = new File(file.getAbsoluteFile() + "\\" + currentName + "." + currentFileExtension);
+            File outFile = new File(file.getAbsoluteFile(), currentName + "." + currentFileExtension);
             try {
-                ImageIO.write(currentImage, currentFileExtension, outFile);
+                if (currentImage == null || !ImageIO.write(currentImage, currentFileExtension, outFile)) {
+                    logger.log(Level.WARNING, "Nothing written (no image or no writer for format): " + outFile.getAbsolutePath());
+                }
             }
             catch (IOException ex) {
                 logger.log(Level.SEVERE, "Error when trying to write image to disk (jButton1ActionPerformed): "+outFile.getAbsolutePath(), ex);
